@@ -13,9 +13,9 @@ fi
 # Function to install required packages
 install_packages() {
     echo "Installing required packages with pacman..."
-    pacman -Syu --noconfirm samba krb5 bind-tools python3-pip dnsutils net-tools
+    pacman -Syu --noconfirm samba krb5 bind-tools dnsutils net-tools dnsmasq python-pip
     echo "Installing Python packages with pip..."
-    pip install markdown
+    pip install markdown pygments
 }
 
 # Function to handle potential DNS conflicts
