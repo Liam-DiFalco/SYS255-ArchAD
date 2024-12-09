@@ -48,17 +48,28 @@ realm = $REALM
 server string = %h server (Samba, Arch Linux)
 netbios name = $NETBIOS_NAME
 security = ADS
+dns forwarder = $DNS_FORWARDER
+server role = active directory domain controller
+log file = /var/log/samba/%m.log
+max log size = 1000
+log level = 1
 
-[ldap]
-   ldap server require strong auth = no
-   passdb backend = ldapsam:ldap://127.0.0.1" > /etc/samba/smb.conf
+[netlogon]
+    path = /var/lib/samba/sysvol/$DOMAIN/scripts
+    read only = No
+
+[sysvol]
+    path = /var/lib/samba/sysvol
+    read only = No" > /etc/samba/smb.conf
 
 # Initialize the Kerberos database and realm
+echo "Initializing Kerberos..."
 echo "$REALM" | kinit admin
 kadmin -p admin -w password -q "add_principal -pw password krbtgt/$REALM"
 kadmin -p admin -w password -q "ktadd krbtgt/$REALM"
 
 # Start Samba services
+echo "Starting Samba services..."
 systemctl enable smb.service
 systemctl start smb.service
 systemctl enable nmb.service
@@ -67,6 +78,7 @@ systemctl enable winbind.service
 systemctl start winbind.service
 
 # Configure DNS (BIND9)
+echo "Configuring BIND9..."
 echo "zone \"$DOMAIN\" {
     type master;
     file \"/etc/bind/db.$DOMAIN\";
@@ -97,9 +109,15 @@ echo "session required pam_mkhomedir.so skel=/etc/skel umask=0022" >> /etc/pam.d
 echo "session optional pam_systemd.so" >> /etc/pam.d/system-auth
 
 # Restart Winbind service to apply changes
+echo "Restarting Winbind service..."
 systemctl restart winbind.service
 
+# Completion message
 echo "Active Directory Domain Controller setup completed successfully!"
-```
 
-This script will configure your Arch Linux system as an Active Directory domain controller using Samba and bind9 for DNS. It includes the necessary steps to set up Samba, Kerberos, and DNS. Please make sure
+# Troubleshooting tips
+echo "If you encounter any issues, check the following logs:"
+echo "- Samba logs: /var/log/samba/"
+echo "- Kerberos logs: /var/log/krb5kdc.log"
+echo "- BIND9 logs: /var/log/named.log"
+echo "- Check DNS resolution with: samba-tool dns query 127.0.0.1 $DOMAIN"
