@@ -1,3 +1,6 @@
+ I apologize if my previous responses were too abrupt or incomplete. Let's continue with configuring Samba for Active Directory Domain Controller (AD DC) on Arch Linux. Here is the script adapted to install and configure Samba as an AD DC:
+
+```bash
 #!/bin/bash
 
 # Exit immediately if a command exits with a non-zero status
@@ -38,59 +41,68 @@ setup_prompt() {
 setup_prompt
 
 # Install necessary packages
-apt update && apt install samba smbclient winbind libnss-winbind libpam-winbind krb5-user bind9 -y || { echo "Failed to install packages." ; exit 1; }
+pacman -Syu samba smbclient winbind libnss-winbind krb5 bind --noconfirm || { echo "Failed to install packages." ; exit 1; }
 
 # Configure Samba for AD DC
 cp /etc/samba/smb.conf /etc/samba/smb.conf.bak
 echo "[global]
 workgroup = $DOMAIN
 realm = $REALM
-server string = %h server (Samba, Ubuntu)
+server string = %h server (Samba, Arch Linux)
 netbios name = $NETBIOS_NAME
 security = ADS
-dns proxy = no
-kerberos method = system keytab
-template homedir = /home/samba/%u
-template shell = /bin/bash
-ldap password sync = Yes
-passdb backend = tdbsam
-idmap config * : backend = tdb2
-idmap cache time = 30" > /etc/samba/smb.conf
 
-# Configure Kerberos
-cp /etc/krb5.conf /etc/krb5.conf.bak
-echo "[logging]
- default = FILE:/var/log/kerberos.log
-[libdefaults]
- default_realm = $REALM
- dns_lookup_realm = false
- dns_lookup_kdc = true
- ticket_lifetime = 24h
- forwardable = true
-[realms]
- $REALM = {
- kdc = $FQDN
- admin_server = $FQDN
- default_domain = $DOMAIN
- }
- [domain_realm]
- .$DOMAIN = $REALM
- $DOMAIN = $REALM" > /etc/krb5.conf
+[ldap]
+   ldap server require strong auth = no
+   passdb backend = ldapsam:ldap://127.0.0.1" > /etc/samba/smb.conf
 
-# Configure BIND9 for Samba AD DC
-cp /etc/bind/named.conf.local /etc/bind/named.conf.local.bak
+# Initialize the Kerberos database and realm
+echo "$REALM" | kinit admin
+kadmin -p admin -w password -q "add_principal -pw password krbtgt/$REALM"
+kadmin -p admin -w password -q "ktadd krbtgt/$REALM"
+
+# Start Samba services
+systemctl enable smb.service
+systemctl start smb.service
+systemctl enable nmb.service
+systemctl start nmb.service
+systemctl enable winbind.service
+systemctl start winbind.service
+
+# Configure DNS (BIND9)
 echo "zone \"$DOMAIN\" {
- type master;
- file \"/etc/bind/db.$DOMAIN\";
+    type master;
+    file \"/etc/bind/db.$DOMAIN\";
 };" > /etc/bind/named.conf.local
 
-# Create the BIND9 zone file
-cp /etc/bind/db.template /etc/bind/db.$DOMAIN
+cp /etc/bind/db.empty /etc/bind/db.$DOMAIN
 sed -i "s/example.com/$DOMAIN/" /etc/bind/db.$DOMAIN
-sed -i "s/ns1.example.com/$FQDN/" /etc/bind/db.$DOMAIN
+echo "@ IN SOA ns1.$DOMAIN. root.$DOMAIN. (
+    2023040101 ; serial
+    86400      ; refresh every 24 hours
+    3600       ; retry in one hour
+    604800     ; expire in a week
+    86400 )    ; minimum TTL of one day
+;
+@ IN NS ns1.$DOMAIN.
+ns1 IN A $FQDN
+$FQDN IN CNAME @
+" > /etc/bind/db.$DOMAIN
 
-# Restart services
-systemctl restart samba-ad-dc || { echo "Failed to restart Samba service." ; exit 1; }
-systemctl restart bind9 || { echo "Failed to restart BIND9 service." ; exit 1; }
+systemctl enable named.service
+systemctl start named.service
 
-echo "Samba AD DC with BIND9 as DNS backend has been set up successfully!"
+# Configure NSS for Winbind
+echo "hosts: files dns myhostname" >> /etc/nsswitch.conf
+echo "networks: files dns" >> /etc/nsswitch.conf
+
+echo "session required pam_mkhomedir.so skel=/etc/skel umask=0022" >> /etc/pam.d/system-auth
+echo "session optional pam_systemd.so" >> /etc/pam.d/system-auth
+
+# Restart Winbind service to apply changes
+systemctl restart winbind.service
+
+echo "Active Directory Domain Controller setup completed successfully!"
+```
+
+This script will configure your Arch Linux system as an Active Directory domain controller using Samba and bind9 for DNS. It includes the necessary steps to set up Samba, Kerberos, and DNS. Please make sure
