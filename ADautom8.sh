@@ -32,7 +32,7 @@ setup_prompt() {
 install_packages() {
     echo "Installing required packages..."
     pacman -Syu --noconfirm samba krb5 dnsutils net-tools dnsmasq python-pip
-    pip install markdown pygments --break-system-packages
+    pip install markdown pygments
 }
 
 # Configure /etc/hosts and hostname
@@ -123,6 +123,7 @@ troubleshooting() {
     echo "- Verify DNS: samba-tool dns query 127.0.0.1 $DOMAIN @ ALL"
     echo "- Test Kerberos: kinit administrator@$REALM"
     echo "- Check hostname and /etc/hosts configuration."
+    echo "- Check DNS resolution with 'host $FQDN' and 'host $REALM'."
 }
 
 # Main script execution
