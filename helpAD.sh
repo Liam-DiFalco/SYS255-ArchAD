@@ -49,8 +49,8 @@ echo "[libdefaults]
     }
 
 [domain_realm]
-    .$wg = $domain
-    $wg = $domain" | sudo tee /etc/krb5.conf
+    .$domain = $domain
+    $domain = $domain" | sudo tee /etc/krb5.conf
 
 # Provision Samba domain
 sudo samba-tool domain provision --use-rfc2307 --interactive
