@@ -3,7 +3,15 @@
 # Prompt user for domain, workgroup, and IP address
 read -p "Enter the domain name: " domain
 read -p "Enter the workgroup (realm): " wg
-ip=$(hostname -I | awk '{print $1}')  # Get the IP address of the machine
+read -p "Enter the IP address of your machine: " ip
+
+# Check if IP address is provided
+if [ -z "$ip" ]; then
+    echo "Error: IP address is required."
+    exit 1
+fi
+
+echo "Using IP: $ip"
 
 # Install necessary packages
 sudo pacman -S samba smbclient krb5 dnsmask python-pip
@@ -27,7 +35,7 @@ echo "[global]
     path = /var/lib/samba/sysvol
     read only = No" | sudo tee /etc/samba/smb.conf
 
-# Configure krb5.conf with user input and machine's IP address
+# Configure krb5.conf with user input and provided IP address
 echo "[libdefaults]
     default_realm = $domain
     dns_lookup_realm = false
