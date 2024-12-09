@@ -9,93 +9,59 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Static variables (no user input)
-FQDN="dc.example.com"
-DOMAIN="example.com"
-REALM="EXAMPLE.COM"
-DNS_FORWARDER="8.8.8.8"
-NETBIOS_NAME="DC1"
+# Install necessary packages
+echo "Installing necessary packages..."
+pacman -Syu --noconfirm samba krb5 bind dnsutils
 
-# Install required packages
-install_packages() {
-    echo "Installing required packages..."
-    pacman -Syu --noconfirm samba krb5 bind dnsutils net-tools python-pip
-}
-
-# Configure /etc/hosts and hostname
-configure_hostname() {
-    echo "Configuring hostname and /etc/hosts..."
-    hostnamectl set-hostname $FQDN
-    cat <<EOL > /etc/hosts
-127.0.0.1   localhost
-192.168.1.108 $FQDN $(hostname)
-EOL
-}
-
-# Configure Kerberos
-configure_kerberos() {
-    echo "Configuring Kerberos..."
-    cat <<EOL > /etc/krb5.conf
+# Configure Kerberos (create /etc/krb5.conf)
+echo "Configuring Kerberos..."
+cat <<EOL > /etc/krb5.conf
 [libdefaults]
-    default_realm = $REALM
+    default_realm = EXAMPLE.COM
     dns_lookup_realm = false
     dns_lookup_kdc = true
 
 [realms]
-    $REALM = {
-        kdc = $FQDN
-        admin_server = $FQDN
+    EXAMPLE.COM = {
+        kdc = dc.example.com
+        admin_server = dc.example.com
     }
 
 [domain_realm]
-    .$DOMAIN = $REALM
-    $DOMAIN = $REALM
+    .example.com = EXAMPLE.COM
+    example.com = EXAMPLE.COM
 EOL
 
-    # Initialize the Kerberos database
-    echo "Initializing Kerberos database..."
-    krb5_newrealm || { echo "Failed to initialize Kerberos database"; exit 1; }
-
-    # Create Kerberos Admin principal
-    echo "Creating Kerberos admin principal..."
-    kadmin.local -q "addprinc admin@$REALM" || { echo "Failed to create admin principal"; exit 1; }
-
-    # Create krbtgt principal
-    echo "Creating krbtgt principal..."
-    kadmin.local -q "addprinc krbtgt/$REALM@$REALM" || { echo "Failed to create krbtgt principal"; exit 1; }
-}
-
-# Configure Samba
-configure_samba() {
-    echo "Configuring Samba..."
-    cat <<EOL > /etc/samba/smb.conf
+# Configure Samba (simple smb.conf)
+echo "Configuring Samba..."
+cat <<EOL > /etc/samba/smb.conf
 [global]
-    netbios name = $NETBIOS_NAME
-    realm = $REALM
-    workgroup = ${REALM%%.*}
+    workgroup = EXAMPLE
+    realm = EXAMPLE.COM
     server role = active directory domain controller
-    dns forwarder = $DNS_FORWARDER
+    dns forwarder = 8.8.8.8
 
 [netlogon]
-    path = /var/lib/samba/sysvol/${REALM,,}/scripts
+    path = /var/lib/samba/sysvol/example.com/scripts
     read only = No
 
 [sysvol]
     path = /var/lib/samba/sysvol
     read only = No
 EOL
-}
 
-# Configure BIND9 DLZ as DNS backend
-configure_bind() {
-    echo "Configuring BIND as DNS backend for Samba..."
-    
-    cat <<EOL > /etc/named.conf
+# Provision Samba AD DC with interactive mode
+echo "Provisioning Samba domain with interactive mode..."
+samba-tool domain provision --use-rfc2307 --realm=EXAMPLE.COM --domain=EXAMPLE --server-role=dc --dns-backend=BIND9_DLZ --interactive
+
+# Configure BIND9 (DNS)
+echo "Configuring BIND9 as DNS backend for Samba..."
+cat <<EOL > /etc/named.conf
 options {
     directory "/var/named";
     allow-query { any; };
     recursion yes;
-    forwarders { $DNS_FORWARDER; };
+    forwarders { 8.8.8.8; };
     dnssec-validation no;
 };
 
@@ -103,70 +69,12 @@ include "/etc/named.rfc1912.zones";
 include "/etc/named.root.key";
 EOL
 
-    # Set permissions and restart BIND
-    chmod 755 /var/named
-    systemctl enable named
-    systemctl restart named
-}
-
-# Clean existing Samba data and provision the domain
-provision_samba() {
-    echo "Cleaning existing Samba data..."
-    rm -rf /var/lib/samba/*
-
-    echo "Provisioning Samba AD DC with BIND9 DLZ as DNS backend..."
-    samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=BIND9_DLZ --adminpass="Passw0rd!" || {
-        echo "Provisioning failed. Check logs for details."
-        exit 1
-    }
-
-    echo "Updating BIND configuration with Samba DLZ module..."
-    cat <<EOL >> /etc/named.conf
-dlz "$REALM" {
-    database "dlopen /usr/lib/samba/bind9/dlz_bind9_9.so";
-};
-EOL
-
-    systemctl restart named
-}
-
-# Set permissions
-fix_permissions() {
-    echo "Setting correct permissions for Samba directories..."
-    chown -R root:root /var/lib/samba
-    chmod -R 700 /var/lib/samba/private
-}
+systemctl enable named
+systemctl restart named
 
 # Start Samba service
-start_samba_service() {
-    echo "Starting Samba service..."
-    systemctl enable samba || echo "Failed to enable Samba service."
-    systemctl start samba || {
-        echo "Samba service failed to start. Check logs with: journalctl -xeu samba"
-        exit 1
-    }
-}
+echo "Starting Samba service..."
+systemctl enable samba
+systemctl start samba
 
-# Troubleshooting tips
-troubleshooting() {
-    echo "TROUBLESHOOTING TIPS:"
-    echo "- Check Samba logs: journalctl -xeu samba"
-    echo "- Verify DNS: samba-tool dns query 127.0.0.1 $DOMAIN @ ALL"
-    echo "- Test Kerberos: kinit administrator@$REALM"
-    echo "- Check hostname and /etc/hosts configuration."
-    echo "- Check DNS resolution with 'host $FQDN' and 'host $REALM'."
-}
-
-# Main script execution
-install_packages
-configure_hostname
-configure_kerberos
-configure_samba
-configure_bind
-provision_samba
-fix_permissions
-start_samba_service
-troubleshooting
-
-echo
-echo "Setup complete! Test your domain and connect clients as needed."
+echo "Samba AD DC setup complete!"
