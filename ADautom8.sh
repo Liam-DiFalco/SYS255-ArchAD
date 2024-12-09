@@ -9,7 +9,7 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Prompt user for FQDN, Realm, DNS forwarder, NetBIOS name, and Administrator password
+# Prompt user for FQDN, Realm, DNS forwarder, NetBIOS name, Administrator password, and DNS backend
 setup_prompt() {
     echo "Welcome to the Samba AD DC Setup Script!"
     
@@ -43,6 +43,17 @@ setup_prompt() {
     if [[ -z "$ADMIN_PASSWORD" ]]; then
         echo "Administrator password cannot be empty. Exiting."
         exit 1
+    fi
+
+    # Get user input for DNS backend
+    echo "Choose a DNS backend for Samba:"
+    echo "1) Internal Samba DNS (default)"
+    echo "2) BIND9 DLZ"
+    read -p "Enter your choice (1 or 2): " DNS_BACKEND
+    if [[ "$DNS_BACKEND" == "2" ]]; then
+        DNS_BACKEND="BIND9_DLZ"
+    else
+        DNS_BACKEND="SAMBA_INTERNAL"
     fi
 }
 
@@ -105,11 +116,12 @@ configure_samba() {
 EOL
 }
 
-# Configure BIND
+# Configure BIND if BIND9_DLZ is selected as DNS backend
 configure_bind() {
-    echo "Configuring BIND as DNS backend for Samba..."
-    
-    cat <<EOL > /etc/named.conf
+    if [[ "$DNS_BACKEND" == "BIND9_DLZ" ]]; then
+        echo "Configuring BIND as DNS backend for Samba..."
+        
+        cat <<EOL > /etc/named.conf
 options {
     directory "/var/named";
     allow-query { any; };
@@ -122,10 +134,11 @@ include "/etc/named.rfc1912.zones";
 include "/etc/named.root.key";
 EOL
 
-    # Set permissions and restart BIND
-    chmod 755 /var/named
-    systemctl enable named
-    systemctl restart named
+        # Set permissions and restart BIND
+        chmod 755 /var/named
+        systemctl enable named
+        systemctl restart named
+    fi
 }
 
 # Clean existing Samba data and provision the domain
@@ -133,20 +146,28 @@ provision_samba() {
     echo "Cleaning existing Samba data..."
     rm -rf /var/lib/samba/*
 
-    echo "Provisioning Samba AD DC with BIND as DNS backend..."
-    samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=BIND9_DLZ --adminpass="$ADMIN_PASSWORD" || {
-        echo "Provisioning failed. Check logs for details."
-        exit 1
-    }
+    if [[ "$DNS_BACKEND" == "BIND9_DLZ" ]]; then
+        echo "Provisioning Samba AD DC with BIND9 DLZ as DNS backend..."
+        samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=BIND9_DLZ --adminpass="$ADMIN_PASSWORD" || {
+            echo "Provisioning failed. Check logs for details."
+            exit 1
+        }
 
-    echo "Updating BIND configuration with Samba DLZ module..."
-    cat <<EOL >> /etc/named.conf
+        echo "Updating BIND configuration with Samba DLZ module..."
+        cat <<EOL >> /etc/named.conf
 dlz "$REALM" {
     database "dlopen /usr/lib/samba/bind9/dlz_bind9_9.so";
 };
 EOL
 
-    systemctl restart named
+        systemctl restart named
+    else
+        echo "Provisioning Samba AD DC with Internal DNS backend..."
+        samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=SAMBA_INTERNAL --adminpass="$ADMIN_PASSWORD" || {
+            echo "Provisioning failed. Check logs for details."
+            exit 1
+        }
+    fi
 }
 
 # Set permissions
