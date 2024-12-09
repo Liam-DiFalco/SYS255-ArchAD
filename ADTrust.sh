@@ -78,15 +78,15 @@ cat <<EOL > /etc/krb5.conf
 EOL
 
 # Initialize the Kerberos KDC and Admin server
+echo "Initializing Kerberos KDC..."
+# Ensure the krb5-kdc service is started and enabled
 systemctl enable krb5kdc
 systemctl start krb5kdc
-systemctl enable kadmin
-systemctl start kadmin
 
-# Initialize the Kerberos database if it's not already initialized
+# Initialize Kerberos database (if it is not already initialized)
 krb5_newrealm || { echo "Kerberos database initialization failed."; exit 1; }
 
-# Create Kerberos Admin principal
+# Create the Admin principal
 echo "Creating Kerberos Admin principal..."
 kadmin.local -q "addprinc admin@$REALM" || { echo "Failed to create admin principal."; exit 1; }
 
