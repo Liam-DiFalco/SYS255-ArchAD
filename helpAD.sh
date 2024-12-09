@@ -17,7 +17,8 @@ echo "Using IP: $ip"
 sudo pacman -S --no-confirm samba smbclient krb5 dnsmasq python-pip
 
 # Install Python dependencies
-sudo pip install cryptography markdown
+sudo pip install cryptography --break-system-packages
+sudo pip install markdown --break-system-packages
 
 # Configure smb.conf with user input
 echo "[global]
