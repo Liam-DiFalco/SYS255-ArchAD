@@ -1,8 +1,7 @@
 #!/bin/bash
 
-# Comprehensive Samba AD DC Setup Script
-# Automates the setup of a Samba Active Directory Domain Controller (AD DC).
-# Includes installation, configuration, troubleshooting, and validation steps.
+# Exit immediately if a command exits with a non-zero status
+set -e
 
 # Check if the script is run as root
 if [[ $EUID -ne 0 ]]; then
@@ -10,29 +9,45 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Function to install required packages
-install_packages() {
-    echo "Installing required packages with pacman..."
-    pacman -Syu --noconfirm samba krb5 bind-tools dnsutils net-tools dnsmasq python-pip
-    echo "Installing Python packages with pip..."
-    pip install markdown pygments
-}
+# Prompt user for FQDN, Realm, and DNS forwarder
+setup_prompt() {
+    echo "Welcome to the Samba AD DC Setup Script!"
+    read -p "Enter the FQDN for your server (e.g., dc.example.com): " FQDN
+    if [[ -z "$FQDN" ]]; then
+        echo "FQDN cannot be empty. Exiting."
+        exit 1
+    fi
 
-# Function to handle potential DNS conflicts
-disable_dnsmasq() {
-    echo "Checking for DNS conflicts with dnsmasq..."
-    if systemctl is-active --quiet dnsmasq; then
-        echo "dnsmasq is running. Disabling and stopping it..."
-        systemctl disable dnsmasq
-        systemctl stop dnsmasq
-    else
-        echo "dnsmasq is not running. No action needed."
+    DOMAIN=$(echo "$FQDN" | awk -F. '{print $2"."$3}')
+    REALM=$(echo "$DOMAIN" | tr 'a-z' 'A-Z')
+
+    read -p "Enter the DNS forwarder (e.g., 8.8.8.8): " DNS_FORWARDER
+    if [[ -z "$DNS_FORWARDER" ]]; then
+        echo "DNS forwarder cannot be empty. Exiting."
+        exit 1
     fi
 }
 
-# Function to configure /etc/krb5.conf
+# Install required packages
+install_packages() {
+    echo "Installing required packages..."
+    pacman -Syu --noconfirm samba krb5 dnsutils net-tools dnsmasq python-pip
+    pip install markdown pygments
+}
+
+# Configure /etc/hosts and hostname
+configure_hostname() {
+    echo "Configuring hostname and /etc/hosts..."
+    hostnamectl set-hostname $FQDN
+    cat <<EOL > /etc/hosts
+127.0.0.1   localhost
+192.168.1.108 $FQDN $(hostname)
+EOL
+}
+
+# Configure Kerberos
 configure_kerberos() {
-    echo "Configuring Kerberos (krb5.conf)..."
+    echo "Configuring Kerberos..."
     cat <<EOL > /etc/krb5.conf
 [libdefaults]
     default_realm = $REALM
@@ -49,32 +64,9 @@ configure_kerberos() {
     .$DOMAIN = $REALM
     $DOMAIN = $REALM
 EOL
-    echo "Kerberos configuration complete."
 }
 
-# Prompt user for FQDN, Realm, and DNS forwarder
-setup_prompt() {
-    echo "Welcome to the Samba AD DC Full Setup Script!"
-    echo
-    read -p "Enter the FQDN for your server (e.g., dc.example.com): " FQDN
-    if [[ -z "$FQDN" ]]; then
-        echo "FQDN cannot be empty. Exiting."
-        exit 1
-    fi
-    echo "FQDN set to: $FQDN"
-
-    DOMAIN=$(echo "$FQDN" | awk -F. '{print $2"."$3}')
-    REALM=$(echo "$DOMAIN" | tr 'a-z' 'A-Z')
-
-    read -p "Enter the DNS forwarder (e.g., 8.8.8.8): " DNS_FORWARDER
-    if [[ -z "$DNS_FORWARDER" ]]; then
-        echo "DNS forwarder cannot be empty. Exiting."
-        exit 1
-    fi
-    echo "DNS forwarder set to: $DNS_FORWARDER"
-}
-
-# Function to configure Samba
+# Configure Samba
 configure_samba() {
     echo "Configuring Samba..."
     cat <<EOL > /etc/samba/smb.conf
@@ -93,83 +85,56 @@ configure_samba() {
     path = /var/lib/samba/sysvol
     read only = No
 EOL
-    echo "Samba configuration file created at /etc/samba/smb.conf."
 }
 
-# Function to provision the Samba AD DC
+# Clean existing Samba data and provision the domain
 provision_samba() {
-    echo "Provisioning the Samba AD Domain Controller..."
-    rm -rf /var/lib/samba/*  # Clear any existing configuration
-    samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=SAMBA_INTERNAL
-    echo "Provisioning complete."
-}
+    echo "Cleaning existing Samba data..."
+    rm -rf /var/lib/samba/*
 
-# Function to start Samba service
-start_samba_service() {
-    echo "Starting and enabling Samba service..."
-    systemctl enable samba
-    systemctl start samba
-
-    if systemctl is-active --quiet samba; then
-        echo "Samba service is running."
-    else
-        echo "Samba service failed to start. Check logs for details."
+    echo "Provisioning Samba AD DC..."
+    samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=SAMBA_INTERNAL || {
+        echo "Provisioning failed. Check logs for details."
         exit 1
-    fi
+    }
 }
 
-# Function to create a Domain Admin user
-create_admin_user() {
-    read -p "Would you like to create a Domain Admin user? (yes/no): " CREATE_USER
-    if [[ "$CREATE_USER" == "yes" ]]; then
-        read -p "Enter the username for the Domain Admin (e.g., adminuser): " ADMIN_USER
-        if [[ -z "$ADMIN_USER" ]]; then
-            echo "Username cannot be empty. Exiting."
-            exit 1
-        fi
-
-        # Create the user
-        samba-tool user create "$ADMIN_USER"
-        # Add the user to Domain Admins group
-        samba-tool group addmembers "Domain Admins" "$ADMIN_USER"
-        echo "Domain Admin user '$ADMIN_USER' created and added to Domain Admins group."
-    fi
+# Set permissions
+fix_permissions() {
+    echo "Setting correct permissions for Samba directories..."
+    chown -R root:root /var/lib/samba
+    chmod -R 700 /var/lib/samba/private
 }
 
-# Function to test DNS
-test_dns() {
-    echo "Testing DNS resolution..."
-    dig @$FQDN $REALM
-    if [[ $? -ne 0 ]]; then
-        echo "DNS resolution test failed. Check your Samba DNS configuration."
-    else
-        echo "DNS resolution test successful."
-    fi
+# Start Samba service
+start_samba_service() {
+    echo "Starting Samba service..."
+    systemctl enable samba || echo "Failed to enable Samba service."
+    systemctl start samba || {
+        echo "Samba service failed to start. Check logs with: journalctl -xeu samba"
+        exit 1
+    }
 }
 
 # Troubleshooting tips
 troubleshooting() {
     echo "TROUBLESHOOTING TIPS:"
     echo "- Check Samba logs: journalctl -xeu samba"
-    echo "- Verify DNS setup: dig @$FQDN $REALM"
+    echo "- Verify DNS: samba-tool dns query 127.0.0.1 $DOMAIN @ ALL"
     echo "- Test Kerberos: kinit administrator@$REALM"
-    echo "- Confirm Samba status: systemctl status samba"
-    echo "- Disable conflicting services (e.g., dnsmasq)."
-    echo "- Ensure the system hostname matches the configured FQDN."
-    echo
+    echo "- Check hostname and /etc/hosts configuration."
 }
 
 # Main script execution
 setup_prompt
 install_packages
-disable_dnsmasq
+configure_hostname
 configure_kerberos
 configure_samba
 provision_samba
+fix_permissions
 start_samba_service
-create_admin_user
-test_dns
 troubleshooting
 
 echo
-echo "Setup complete! Test your domain configuration and connect clients as needed."
+echo "Setup complete! Test your domain and connect clients as needed."
