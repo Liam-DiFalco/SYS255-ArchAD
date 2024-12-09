@@ -129,7 +129,7 @@ provision_samba() {
     rm -rf /var/lib/samba/*
 
     echo "Provisioning Samba AD DC with BIND9 DLZ as DNS backend..."
-    samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=BIND9_DLZ --adminpass="password" || {
+    samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=BIND9_DLZ --adminpass="Passw0rd!" || {
         echo "Provisioning failed. Check logs for details."
         exit 1
     }
