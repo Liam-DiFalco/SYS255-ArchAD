@@ -32,7 +32,7 @@ setup_prompt() {
 install_packages() {
     echo "Installing required packages..."
     pacman -Syu --noconfirm samba krb5 dnsutils net-tools dnsmasq python-pip
-    pip install markdown pygments
+    pip install markdown pygments --break-system-packages
 }
 
 # Configure /etc/hosts and hostname
