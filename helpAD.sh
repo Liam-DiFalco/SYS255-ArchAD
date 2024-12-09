@@ -14,7 +14,7 @@ fi
 echo "Using IP: $ip"
 
 # Install necessary packages
-sudo pacman -S --no-confirm samba smbclient krb5 dnsmask python-pip
+sudo pacman -S --no-confirm samba smbclient krb5 dnsmasq python-pip
 
 # Install Python dependencies
 sudo pip install cryptography markdown
