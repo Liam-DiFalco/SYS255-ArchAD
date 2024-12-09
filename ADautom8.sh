@@ -49,7 +49,7 @@ setup_prompt() {
 # Install required packages
 install_packages() {
     echo "Installing required packages..."
-    pacman -Syu --noconfirm samba krb5 dnsutils net-tools dnsmasq python-pip
+    pacman -Syu --noconfirm samba krb5 dnsutils net-tools dnsmasq python-pip python-dnspython
     pip install markdown pygments --break-system-packages
 }
 
