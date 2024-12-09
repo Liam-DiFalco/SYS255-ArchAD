@@ -49,34 +49,62 @@ server string = %h server (Samba, Arch Linux)
 netbios name = $NETBIOS_NAME
 security = ADS
 dns forwarder = $DNS_FORWARDER
-server role = active directory domain controller
-log file = /var/log/samba/%m.log
-max log size = 1000
-log level = 1
 
 [netlogon]
-    path = /var/lib/samba/sysvol/$DOMAIN/scripts
-    read only = No
+   path = /var/lib/samba/sysvol/$REALM/scripts
+   read only = No
 
 [sysvol]
-    path = /var/lib/samba/sysvol
-    read only = No" > /etc/samba/smb.conf
+   path = /var/lib/samba/sysvol
+   read only = No" > /etc/samba/smb.conf
 
-# Initialize the Kerberos database and realm
-echo "Initializing Kerberos..."
-echo "$REALM" | kinit admin
-kadmin -p admin -w password -q "add_principal -pw password krbtgt/$REALM"
-kadmin -p admin -w password -q "ktadd krbtgt/$REALM"
+# Configure Kerberos
+echo "Configuring Kerberos..."
+cat <<EOL > /etc/krb5.conf
+[libdefaults]
+    default_realm = $REALM
+    dns_lookup_realm = false
+    dns_lookup_kdc = true
+
+[realms]
+    $REALM = {
+        kdc = $FQDN
+        admin_server = $FQDN
+    }
+
+[domain_realm]
+    .$DOMAIN = $REALM
+    $DOMAIN = $REALM
+EOL
+
+# Initialize the Kerberos KDC and Admin server
+systemctl enable krb5kdc
+systemctl start krb5kdc
+systemctl enable kadmin
+systemctl start kadmin
+
+# Initialize the Kerberos database if it's not already initialized
+krb5_newrealm || { echo "Kerberos database initialization failed."; exit 1; }
+
+# Create Kerberos Admin principal
+echo "Creating Kerberos Admin principal..."
+kadmin.local -q "addprinc admin@$REALM" || { echo "Failed to create admin principal."; exit 1; }
+
+# Create the krbtgt principal
+echo "Creating krbtgt principal..."
+kadmin.local -q "addprinc krbtgt/$REALM@$REALM" || { echo "Failed to create krbtgt principal."; exit 1; }
 
 # Start Samba services
 echo "Starting Samba services..."
-systemctl enable smb.service
-systemctl start smb.service
-systemctl enable nmb.service
-systemctl start nmb.service
+systemctl enable samba
+systemctl start samba
+systemctl enable nmb
+systemctl start nmb
+systemctl enable winbind
+systemctl start winbind
 
 # Configure DNS (BIND9)
-echo "Configuring BIND9..."
+echo "Configuring BIND9 for DNS..."
 echo "zone \"$DOMAIN\" {
     type master;
     file \"/etc/bind/db.$DOMAIN\";
@@ -93,29 +121,20 @@ echo "@ IN SOA ns1.$DOMAIN. root.$DOMAIN. (
 ;
 @ IN NS ns1.$DOMAIN.
 ns1 IN A $FQDN
-$FQDN IN CNAME @
-" > /etc/bind/db.$DOMAIN
+$FQDN IN CNAME @" > /etc/bind/db.$DOMAIN
 
-systemctl enable named.service
-systemctl start named.service
+systemctl enable named
+systemctl start named
 
-# Configure NSS for Samba
+# Configure NSS for Winbind
+echo "Configuring NSS for Winbind..."
 echo "hosts: files dns myhostname" >> /etc/nsswitch.conf
 echo "networks: files dns" >> /etc/nsswitch.conf
 
 echo "session required pam_mkhomedir.so skel=/etc/skel umask=0022" >> /etc/pam.d/system-auth
 echo "session optional pam_systemd.so" >> /etc/pam.d/system-auth
 
-# Restart Samba service to apply changes
-echo "Restarting Samba services..."
-systemctl restart smb.service
+# Restart Winbind service to apply changes
+systemctl restart winbind
 
-# Completion message
 echo "Active Directory Domain Controller setup completed successfully!"
-
-# Troubleshooting tips
-echo "If you encounter any issues, check the following logs:"
-echo "- Samba logs: /var/log/samba/"
-echo "- Kerberos logs: /var/log/krb5kdc.log"
-echo "- BIND9 logs: /var/log/named.log"
-echo "- Check DNS resolution with: samba-tool dns query 127.0.0.1 $DOMAIN"
