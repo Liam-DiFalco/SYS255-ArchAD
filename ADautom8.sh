@@ -103,7 +103,7 @@ provision_samba() {
     rm -rf /var/lib/samba/*
 
     echo "Provisioning Samba AD DC..."
-    samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=SAMBA_INTERNAL --netbios-name=$NETBIOS_NAME || {
+    samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=SAMBA_INTERNAL || {
         echo "Provisioning failed. Check logs for details."
         exit 1
     }
