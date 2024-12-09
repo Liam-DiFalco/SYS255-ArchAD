@@ -49,7 +49,7 @@ setup_prompt() {
 # Install required packages
 install_packages() {
     echo "Installing required packages..."
-    pacman -Syu --noconfirm samba krb5 dnsutils net-tools dnsmasq python-pip python-dnspython
+    pacman -Syu --noconfirm samba krb5 bind dnsutils net-tools python-pip python-dnspython
     pip install markdown pygments --break-system-packages
 }
 
@@ -105,16 +105,48 @@ configure_samba() {
 EOL
 }
 
+# Configure BIND
+configure_bind() {
+    echo "Configuring BIND as DNS backend for Samba..."
+    
+    cat <<EOL > /etc/named.conf
+options {
+    directory "/var/named";
+    allow-query { any; };
+    recursion yes;
+    forwarders { $DNS_FORWARDER; };
+    dnssec-validation no;
+};
+
+include "/etc/named.rfc1912.zones";
+include "/etc/named.root.key";
+EOL
+
+    # Set permissions and restart BIND
+    chmod 755 /var/named
+    systemctl enable named
+    systemctl restart named
+}
+
 # Clean existing Samba data and provision the domain
 provision_samba() {
     echo "Cleaning existing Samba data..."
     rm -rf /var/lib/samba/*
 
-    echo "Provisioning Samba AD DC..."
-    samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=SAMBA_INTERNAL --adminpass="$ADMIN_PASSWORD" || {
+    echo "Provisioning Samba AD DC with BIND as DNS backend..."
+    samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=BIND9_DLZ --adminpass="$ADMIN_PASSWORD" || {
         echo "Provisioning failed. Check logs for details."
         exit 1
     }
+
+    echo "Updating BIND configuration with Samba DLZ module..."
+    cat <<EOL >> /etc/named.conf
+dlz "$REALM" {
+    database "dlopen /usr/lib/samba/bind9/dlz_bind9_9.so";
+};
+EOL
+
+    systemctl restart named
 }
 
 # Set permissions
@@ -150,6 +182,7 @@ install_packages
 configure_hostname
 configure_kerberos
 configure_samba
+configure_bind
 provision_samba
 fix_permissions
 start_samba_service
