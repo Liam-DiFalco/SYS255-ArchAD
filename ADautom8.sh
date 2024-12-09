@@ -9,7 +9,7 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Prompt user for FQDN, Realm, DNS forwarder, and NetBIOS name
+# Prompt user for FQDN, Realm, DNS forwarder, NetBIOS name, and Administrator password
 setup_prompt() {
     echo "Welcome to the Samba AD DC Setup Script!"
     
@@ -34,6 +34,14 @@ setup_prompt() {
     read -p "Enter the NetBIOS name (short name, e.g., LIAM): " NETBIOS_NAME
     if [[ -z "$NETBIOS_NAME" ]]; then
         echo "NetBIOS name cannot be empty. Exiting."
+        exit 1
+    fi
+
+    # Get user input for Administrator password
+    read -sp "Enter the Administrator password for Samba: " ADMIN_PASSWORD
+    echo
+    if [[ -z "$ADMIN_PASSWORD" ]]; then
+        echo "Administrator password cannot be empty. Exiting."
         exit 1
     fi
 }
@@ -103,7 +111,7 @@ provision_samba() {
     rm -rf /var/lib/samba/*
 
     echo "Provisioning Samba AD DC..."
-    samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=SAMBA_INTERNAL || {
+    samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=SAMBA_INTERNAL --netbios-name=$NETBIOS_NAME --adminpass="$ADMIN_PASSWORD" || {
         echo "Provisioning failed. Check logs for details."
         exit 1
     }
