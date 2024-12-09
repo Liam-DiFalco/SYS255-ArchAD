@@ -38,7 +38,7 @@ setup_prompt() {
 setup_prompt
 
 # Install necessary packages
-pacman -Syu samba smbclient winbind libnss-winbind krb5 bind --noconfirm || { echo "Failed to install packages." ; exit 1; }
+pacman -Syu samba smbclient krb5 bind --noconfirm || { echo "Failed to install packages." ; exit 1; }
 
 # Configure Samba for AD DC
 cp /etc/samba/smb.conf /etc/samba/smb.conf.bak
@@ -74,8 +74,6 @@ systemctl enable smb.service
 systemctl start smb.service
 systemctl enable nmb.service
 systemctl start nmb.service
-systemctl enable winbind.service
-systemctl start winbind.service
 
 # Configure DNS (BIND9)
 echo "Configuring BIND9..."
@@ -101,16 +99,16 @@ $FQDN IN CNAME @
 systemctl enable named.service
 systemctl start named.service
 
-# Configure NSS for Winbind
+# Configure NSS for Samba
 echo "hosts: files dns myhostname" >> /etc/nsswitch.conf
 echo "networks: files dns" >> /etc/nsswitch.conf
 
 echo "session required pam_mkhomedir.so skel=/etc/skel umask=0022" >> /etc/pam.d/system-auth
 echo "session optional pam_systemd.so" >> /etc/pam.d/system-auth
 
-# Restart Winbind service to apply changes
-echo "Restarting Winbind service..."
-systemctl restart winbind.service
+# Restart Samba service to apply changes
+echo "Restarting Samba services..."
+systemctl restart smb.service
 
 # Completion message
 echo "Active Directory Domain Controller setup completed successfully!"
