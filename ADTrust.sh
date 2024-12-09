@@ -1,6 +1,3 @@
- I apologize if my previous responses were too abrupt or incomplete. Let's continue with configuring Samba for Active Directory Domain Controller (AD DC) on Arch Linux. Here is the script adapted to install and configure Samba as an AD DC:
-
-```bash
 #!/bin/bash
 
 # Exit immediately if a command exits with a non-zero status
