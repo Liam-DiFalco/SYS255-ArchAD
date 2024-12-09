@@ -20,7 +20,6 @@ NETBIOS_NAME="DC1"
 install_packages() {
     echo "Installing required packages..."
     pacman -Syu --noconfirm samba krb5 bind dnsutils net-tools python-pip
-    pip install markdown pygments --break-system-packages
 }
 
 # Configure /etc/hosts and hostname
@@ -52,6 +51,18 @@ configure_kerberos() {
     .$DOMAIN = $REALM
     $DOMAIN = $REALM
 EOL
+
+    # Initialize the Kerberos database
+    echo "Initializing Kerberos database..."
+    krb5_newrealm || { echo "Failed to initialize Kerberos database"; exit 1; }
+
+    # Create Kerberos Admin principal
+    echo "Creating Kerberos admin principal..."
+    kadmin.local -q "addprinc admin@$REALM" || { echo "Failed to create admin principal"; exit 1; }
+
+    # Create krbtgt principal
+    echo "Creating krbtgt principal..."
+    kadmin.local -q "addprinc krbtgt/$REALM@$REALM" || { echo "Failed to create krbtgt principal"; exit 1; }
 }
 
 # Configure Samba
