@@ -49,11 +49,11 @@ server string = %h server (Samba, Arch Linux)
 netbios name = $NETBIOS_NAME
 security = ADS
 dns forwarder = $DNS_FORWARDER
-
+log file = /var/log/samba/log.%m
+max log size = 50
 [netlogon]
    path = /var/lib/samba/sysvol/$REALM/scripts
    read only = No
-
 [sysvol]
    path = /var/lib/samba/sysvol
    read only = No" > /etc/samba/smb.conf
