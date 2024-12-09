@@ -9,7 +9,7 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Prompt user for FQDN, Realm, DNS forwarder, NetBIOS name, Administrator password, and DNS backend
+# Prompt user for FQDN, Realm, DNS forwarder, NetBIOS name, and DNS backend
 setup_prompt() {
     echo "Welcome to the Samba AD DC Setup Script!"
     
@@ -34,14 +34,6 @@ setup_prompt() {
     read -p "Enter the NetBIOS name (short name, e.g., LIAM): " NETBIOS_NAME
     if [[ -z "$NETBIOS_NAME" ]]; then
         echo "NetBIOS name cannot be empty. Exiting."
-        exit 1
-    fi
-
-    # Get user input for Administrator password
-    read -sp "Enter the Administrator password for Samba: " ADMIN_PASSWORD
-    echo
-    if [[ -z "$ADMIN_PASSWORD" ]]; then
-        echo "Administrator password cannot be empty. Exiting."
         exit 1
     fi
 
@@ -148,7 +140,7 @@ provision_samba() {
 
     if [[ "$DNS_BACKEND" == "BIND9_DLZ" ]]; then
         echo "Provisioning Samba AD DC with BIND9 DLZ as DNS backend..."
-        samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=BIND9_DLZ --adminpass="$ADMIN_PASSWORD" || {
+        samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=BIND9_DLZ || {
             echo "Provisioning failed. Check logs for details."
             exit 1
         }
@@ -163,7 +155,7 @@ EOL
         systemctl restart named
     else
         echo "Provisioning Samba AD DC with Internal DNS backend..."
-        samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=SAMBA_INTERNAL --adminpass="$ADMIN_PASSWORD" || {
+        samba-tool domain provision --use-rfc2307 --realm=$REALM --domain=${REALM%%.*} --server-role=dc --dns-backend=SAMBA_INTERNAL || {
             echo "Provisioning failed. Check logs for details."
             exit 1
         }
