@@ -57,6 +57,7 @@ sudo samba-tool domain provision --use-rfc2307 --interactive
 
 # Enable Samba service
 sudo systemctl enable samba
+sudo systemctl restart samba
 
 # Show domain level
 sudo samba-tool domain level show
